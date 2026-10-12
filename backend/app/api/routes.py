@@ -2,27 +2,44 @@
 API route definitions for PromptShield.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from app.models.schemas import ChatRequest, ChatResponse
+from fastapi import APIRouter, Depends, Header
+from app.models.schemas import ChatRequest, ChatResponse, DocumentResponse, DocumentSummary, User
+from app.security.authorization import resolve_demo_user
+from app.services.documents import (
+    get_accessible_document,
+    list_accessible_documents,
+)
 from app.services.assistant import AssistantService
-from app.security.authorization import require_authenticated_user
 
 router = APIRouter()
 
 
+def get_current_user(
+    x_demo_user: str | None = Header(default=None, alias="X-Demo-User"),
+) -> User:
+    return resolve_demo_user(x_demo_user)
+
+
+@router.get("/documents", response_model=list[DocumentSummary])
+def list_documents(
+    user: User = Depends(get_current_user),
+) -> list[DocumentSummary]:
+    return list_accessible_documents(user)
+
+
+@router.get(
+    "/documents/{document_id}",
+    response_model=DocumentResponse,
+)
+def read_document(
+    document_id: str,
+    user: User = Depends(get_current_user),
+) -> DocumentResponse:
+    return get_accessible_document(document_id, user)
+
+
+# Assistant chat endpoint
 @router.post("/chat", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest,
-    # user=Depends(require_authenticated_user),
-):
-    """Send a message to the AI assistant with policy enforcement."""
+async def chat(request: ChatRequest):
     service = AssistantService()
     return await service.chat(request)
-
-
-@router.get("/documents")
-async def list_documents():
-    """List available documents the assistant can access."""
-    from app.services.documents import DocumentService
-    svc = DocumentService()
-    return {"documents": svc.list()}

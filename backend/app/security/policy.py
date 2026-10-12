@@ -1,9 +1,20 @@
 """
-Policy engine – evaluates incoming prompts against configured security rules.
+Policy engine – evaluates incoming prompts and document access against configured security rules.
 """
 
 from dataclasses import dataclass
 from typing import Protocol
+from app.models.schemas import User
+
+
+def can_read_document(user: User, classification: str) -> bool:
+    """Return whether this user may read this classification."""
+    if classification == "public":
+        return True
+    if classification == "restricted":
+        return user.role == "admin"
+    # Unknown classifications must be denied.
+    return False
 
 
 @dataclass

@@ -9,8 +9,8 @@ from app.config import settings
 
 app = FastAPI(
     title="PromptShield",
-    description="Secure AI assistant with prompt injection protection and tool guards.",
-    version="0.1.0",
+    description="AI Agent Security Gateway",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -21,10 +21,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(router)
 app.include_router(router, prefix="/api")
 
 
 @app.get("/health")
-async def health_check():
-    """Liveness probe."""
-    return {"status": "ok", "service": "promptshield", "environment": settings.environment}
+def health():
+    return {"status": "ok", "service": "promptshield"}

@@ -2,10 +2,29 @@
 Pydantic request / response schemas.
 """
 
-from pydantic import BaseModel, Field
 from typing import Literal
+from pydantic import BaseModel, Field
+
+Role = Literal["employee", "admin"]
+Classification = Literal["public", "restricted"]
 
 
+class User(BaseModel):
+    user_id: str
+    role: Role
+
+
+class DocumentSummary(BaseModel):
+    document_id: str
+    title: str
+    classification: Classification
+
+
+class DocumentResponse(DocumentSummary):
+    content: str
+
+
+# Chat schemas
 class Message(BaseModel):
     role: Literal["user", "assistant", "system"]
     content: str

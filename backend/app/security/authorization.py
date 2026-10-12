@@ -1,38 +1,23 @@
 """
-Authorization helpers – bearer token validation and user extraction.
+Authorization helpers – demo identities and resolution.
 """
 
-from fastapi import Header, HTTPException, status
-from app.config import settings
+from fastapi import HTTPException, status
+from app.models.schemas import User
+
+# Demo identities only. Replace with verified authentication
+# before deploying this application anywhere public.
+DEMO_USERS: dict[str, User] = {
+    "employee-1": User(user_id="employee-1", role="employee"),
+    "admin-1": User(user_id="admin-1", role="admin"),
+}
 
 
-class AuthenticatedUser:
-    def __init__(self, user_id: str, scopes: list[str]):
-        self.user_id = user_id
-        self.scopes = scopes
-
-
-async def require_authenticated_user(
-    authorization: str = Header(...),
-) -> AuthenticatedUser:
-    """
-    FastAPI dependency that validates a Bearer token.
-
-    Replace the stub logic with a real JWT verification library
-    (e.g. python-jose or authlib) before going to production.
-    """
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
+def resolve_demo_user(user_id: str | None) -> User:
+    """Resolve an allowlisted demo identity."""
+    if not user_id or user_id not in DEMO_USERS:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authorization header.",
+            detail="Unknown or missing demo identity",
         )
-
-    # TODO: verify JWT signature and extract claims
-    if token != settings.secret_key:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Token is invalid or expired.",
-        )
-
-    return AuthenticatedUser(user_id="stub-user", scopes=["chat"])
+    return DEMO_USERS[user_id]
