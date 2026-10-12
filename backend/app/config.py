@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     secret_key: str = "changeme"
     allowed_origins: list[str] = ["http://localhost:5173"]
-    use_mock_llm: bool = False
+    # Default to mock LLM for local development & deterministic testing
+    use_mock_llm: bool = True
 
 
 settings = Settings()

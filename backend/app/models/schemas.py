@@ -24,19 +24,20 @@ class DocumentResponse(DocumentSummary):
     content: str
 
 
-# Chat schemas
-class Message(BaseModel):
-    role: Literal["user", "assistant", "system"]
-    content: str
-
-
+# Chat schemas: client supplies user prompt, backend supplies system prompt
 class ChatRequest(BaseModel):
-    messages: list[Message] = Field(..., min_length=1)
-    user_id: str | None = None
+    prompt: str = Field(..., min_length=1, description="User prompt text")
     session_id: str | None = None
+
+
+class Message(BaseModel):
+    role: Literal["system", "user", "assistant"]
+    content: str
 
 
 class ChatResponse(BaseModel):
     reply: str
     flagged: bool = False
     flag_reason: str | None = None
+    user_id: str | None = None
+    role: str | None = None

@@ -12,19 +12,20 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<"employee-1" | "admin-1">("employee-1");
 
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
     setError(null);
-    const userMsg: Message = { role: "user", content: input };
-    const history = [...messages, userMsg];
+    const userPrompt = input;
+    const history = [...messages, { role: "user" as const, content: userPrompt }];
     setMessages(history);
     setInput("");
     setLoading(true);
 
     try {
-      const response = await sendMessage(history);
+      const response = await sendMessage(userPrompt, currentUser);
       setMessages([
         ...history,
         {
@@ -35,7 +36,7 @@ export default function App() {
       ]);
     } catch (err: any) {
       console.error(err);
-      setError(err?.message || "Failed to reach the server. Make sure the backend is running.");
+      setError(err?.message || "Failed to communicate with PromptShield gateway.");
     } finally {
       setLoading(false);
     }
@@ -44,8 +45,22 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <h1>PromptShield</h1>
-        <span className="badge">AI Agent Security Gateway</span>
+        <div>
+          <h1>PromptShield</h1>
+          <span className="badge">AI Agent Security Gateway</span>
+        </div>
+
+        <div className="user-toggle">
+          <label htmlFor="user-select">Active Persona: </label>
+          <select
+            id="user-select"
+            value={currentUser}
+            onChange={(e) => setCurrentUser(e.target.value as any)}
+          >
+            <option value="employee-1">employee-1 (Role: Employee)</option>
+            <option value="admin-1">admin-1 (Role: Admin)</option>
+          </select>
+        </div>
       </header>
 
       <main className="chat-window">
@@ -53,7 +68,7 @@ export default function App() {
           <div className="empty-state">
             <p>Welcome to <strong>PromptShield</strong>.</p>
             <p className="subtitle">
-              Send a message to test the security gateway. Try normal questions or prompt injections!
+              Send messages as <strong>{currentUser}</strong>. The gateway enforces prompt injection filters and server-side authorization.
             </p>
           </div>
         )}
@@ -67,7 +82,7 @@ export default function App() {
           </div>
         ))}
 
-        {loading && <div className="message assistant loading">Analyzing & generating response…</div>}
+        {loading && <div className="message assistant loading">Evaluating prompt & policy…</div>}
         {error && <div className="error-banner">{error}</div>}
       </main>
 
@@ -76,7 +91,7 @@ export default function App() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSend()}
-          placeholder="Type a message or prompt injection test..."
+          placeholder="Type a message or injection test..."
           disabled={loading}
         />
         <button onClick={handleSend} disabled={loading || !input.trim()}>

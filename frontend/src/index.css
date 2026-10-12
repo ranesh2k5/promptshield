@@ -47,6 +47,25 @@ header .badge {
   padding: 0.25rem 0.6rem;
   border-radius: 9999px;
   color: #94a3b8;
+  margin-left: 0.5rem;
+}
+
+.user-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.user-toggle select {
+  background: #1e293b;
+  color: #f8fafc;
+  border: 1px solid #475569;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
 }
 
 .chat-window {

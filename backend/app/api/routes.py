@@ -3,7 +3,13 @@ API route definitions for PromptShield.
 """
 
 from fastapi import APIRouter, Depends, Header
-from app.models.schemas import ChatRequest, ChatResponse, DocumentResponse, DocumentSummary, User
+from app.models.schemas import (
+    ChatRequest,
+    ChatResponse,
+    DocumentResponse,
+    DocumentSummary,
+    User,
+)
 from app.security.authorization import resolve_demo_user
 from app.services.documents import (
     get_accessible_document,
@@ -38,8 +44,11 @@ def read_document(
     return get_accessible_document(document_id, user)
 
 
-# Assistant chat endpoint
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    user: User = Depends(get_current_user),
+):
+    """Send a user message to the AI assistant with policy check and identity binding."""
     service = AssistantService()
-    return await service.chat(request)
+    return await service.chat(request, user)

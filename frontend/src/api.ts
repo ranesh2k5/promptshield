@@ -4,26 +4,30 @@
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api";
 
-export interface Message {
-  role: "user" | "assistant" | "system";
-  content: string;
-}
-
 export interface ChatResponse {
   reply: string;
   flagged: boolean;
   flag_reason?: string;
+  user_id?: string;
+  role?: string;
 }
 
-export async function sendMessage(messages: Message[]): Promise<ChatResponse> {
+export async function sendMessage(
+  prompt: string,
+  demoUser: string = "employee-1"
+): Promise<ChatResponse> {
   const res = await fetch(`${BASE_URL}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Demo-User": demoUser,
+    },
+    body: JSON.stringify({ prompt }),
   });
 
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    const errorText = await res.text();
+    throw new Error(`API error ${res.status}: ${errorText}`);
   }
 
   return res.json() as Promise<ChatResponse>;
