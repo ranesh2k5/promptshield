@@ -2,7 +2,7 @@
 API route definitions for PromptShield.
 """
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from app.models.schemas import (
     ChatRequest,
     ChatResponse,
@@ -11,13 +11,16 @@ from app.models.schemas import (
     User,
 )
 from app.security.authorization import resolve_demo_user
+from app.security.tool_guard import ToolCall
 from app.services.documents import (
     get_accessible_document,
     list_accessible_documents,
 )
 from app.services.assistant import AssistantService
+from app.services.tool_dispatcher import ToolDispatcher
 
 router = APIRouter()
+tool_dispatcher = ToolDispatcher()
 
 
 def get_current_user(
@@ -52,3 +55,26 @@ async def chat(
     """Send a user message to the AI assistant with policy check and identity binding."""
     service = AssistantService()
     return await service.chat(request, user)
+
+
+@router.post("/tools/execute")
+def execute_tool(
+    call: ToolCall,
+    user: User = Depends(get_current_user),
+):
+    """
+    Execute a tool action through PromptShield's security gateway:
+    Tool allowlist check -> schema & type validation -> user role authorization -> trusted executor.
+    """
+    try:
+        result = tool_dispatcher.execute(call, user)
+        return {
+            "allowed": True,
+            "tool": call.name,
+            "result": result,
+        }
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        )

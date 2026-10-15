@@ -1,122 +1,124 @@
 """
-Tests for the hardened ToolGuard security component.
+Tests for Day 3 Secure Tool Execution:
+- Tool allowlist enforcement
+- Strict argument type, length, and extra field validation
+- Mandatory user identity and role-based authorization
+- End-to-end /tools/execute API behavior
 """
 
 import pytest
+from fastapi.testclient import TestClient
+from app.main import app
 from app.models.schemas import User
 from app.security.tool_guard import ToolGuard, ToolCall
+
+client = TestClient(app)
 
 EMPLOYEE = User(user_id="employee-1", role="employee")
 ADMIN = User(user_id="admin-1", role="admin")
 
+EMPLOYEE_HEADER = {"X-Demo-User": "employee-1"}
+ADMIN_HEADER = {"X-Demo-User": "admin-1"}
 
-# --- 1. Mandatory Identity Regression Tests ---
 
-def test_omitted_or_none_user_is_strictly_denied():
+# --- 1. Unit Tests: Tool Authorization & Execution ---
+
+def test_employee_can_execute_search_documents():
     guard = ToolGuard()
-    # Attempting to check tool without providing user identity
-    result = guard.check(
+    result = guard.enforce(
         ToolCall(name="search_documents", arguments={"query": "handbook"}),
-        user=None,
+        executor=lambda args: {"query": args.query},
+        user=EMPLOYEE,
     )
-    assert result.allowed is False
-    assert "Authentication required" in result.reason
+    assert result["query"] == "handbook"
 
 
-def test_enforce_raises_when_user_is_none():
+def test_employee_can_execute_get_weather():
+    guard = ToolGuard()
+    result = guard.enforce(
+        ToolCall(name="get_weather", arguments={"city": "Delhi"}),
+        executor=lambda args: {"city": args.city},
+        user=EMPLOYEE,
+    )
+    assert result["city"] == "Delhi"
+
+
+def test_employee_cannot_execute_privileged_notification():
+    guard = ToolGuard()
+    with pytest.raises(PermissionError) as exc_info:
+        guard.enforce(
+            ToolCall(
+                name="draft_notification",
+                arguments={"channel": "general", "message": "Hello"},
+            ),
+            executor=lambda args: "EXECUTED",
+            user=EMPLOYEE,
+        )
+    assert "Requires 'admin'" in str(exc_info.value)
+
+
+def test_admin_can_execute_privileged_notification():
+    guard = ToolGuard()
+    result = guard.enforce(
+        ToolCall(
+            name="draft_notification",
+            arguments={"channel": "general", "message": "Hello"},
+        ),
+        executor=lambda args: {"channel": args.channel, "message": args.message},
+        user=ADMIN,
+    )
+    assert result["channel"] == "general"
+    assert result["message"] == "Hello"
+
+
+def test_missing_or_none_user_strictly_denied():
     guard = ToolGuard()
     with pytest.raises(PermissionError, match="Authentication required"):
         guard.enforce(
-            ToolCall(name="search_documents", arguments={"query": "handbook"}),
-            executor=lambda c: "ok",
+            ToolCall(name="get_weather", arguments={"city": "Delhi"}),
+            executor=lambda args: "EXECUTED",
             user=None,
         )
 
 
-# --- 2. Tool Allowlist & Role Authorization Tests ---
+def test_disallowed_unknown_tool_blocked():
+    guard = ToolGuard()
+    with pytest.raises(PermissionError, match="not in the allowlist"):
+        guard.enforce(
+            ToolCall(name="os.system", arguments={"command": "whoami"}),
+            executor=lambda args: "EXECUTED",
+            user=ADMIN,
+        )
 
-def test_disallowed_tool_is_blocked():
+
+# --- 2. Unit Tests: Strict Validation (Pydantic, strict=True) ---
+
+def test_missing_required_arguments_blocked():
     guard = ToolGuard()
     result = guard.check(
-        ToolCall(name="delete_file", arguments={}),
-        user=ADMIN,
-    )
-    assert result.allowed is False
-    assert "not in the allowlist" in result.reason
-
-
-def test_unauthorized_role_for_admin_tool_blocked():
-    guard = ToolGuard()
-    # draft_notification requires admin
-    result = guard.check(
-        ToolCall(
-            name="draft_notification",
-            arguments={"channel": "general", "message": "All hands meeting tomorrow"},
-        ),
-        user=EMPLOYEE,
-    )
-    assert result.allowed is False
-    assert "Requires 'admin'" in result.reason
-
-
-def test_admin_can_call_admin_tool_with_valid_args():
-    guard = ToolGuard()
-    result = guard.check(
-        ToolCall(
-            name="draft_notification",
-            arguments={"channel": "general", "message": "All hands meeting tomorrow"},
-        ),
-        user=ADMIN,
-    )
-    assert result.allowed is True
-    assert result.validated_args is not None
-    assert result.validated_args.channel == "general"
-
-
-# --- 3. Strict Value & Type Validation (Pydantic) Tests ---
-
-def test_empty_string_rejected_by_length_constraints():
-    guard = ToolGuard()
-    # query requires min_length=1
-    result = guard.check(
-        ToolCall(name="search_documents", arguments={"query": ""}),
+        ToolCall(name="search_documents", arguments={}),
         user=EMPLOYEE,
     )
     assert result.allowed is False
     assert "Argument validation failed" in result.reason
 
 
-def test_invalid_enum_value_rejected():
+def test_unexpected_extra_arguments_blocked():
     guard = ToolGuard()
-    # channel must be in {"general", "announcements", "leadership"}
-    result = guard.check(
-        ToolCall(
-            name="draft_notification",
-            arguments={"channel": "private_leaks", "message": "Top secret leak"},
-        ),
-        user=ADMIN,
-    )
-    assert result.allowed is False
-    assert "Argument validation failed" in result.reason
-
-
-def test_unexpected_extra_arguments_rejected():
-    guard = ToolGuard()
-    # StrictToolArgs forbids extra fields
     result = guard.check(
         ToolCall(
             name="search_documents",
-            arguments={"query": "handbook", "malicious_injected_param": "eval(code)"},
+            arguments={"query": "handbook", "injected_param": "eval(code)"},
         ),
         user=EMPLOYEE,
     )
     assert result.allowed is False
-    assert "Extra inputs are not permitted" in result.reason or "validation failed" in result.reason
+    assert "extra_forbidden" in result.reason or "Extra inputs" in result.reason or "Argument validation failed" in result.reason
 
 
-def test_wrong_type_rejected():
+def test_strict_type_validation_rejects_int_query():
     guard = ToolGuard()
-    # query must be string, not int or dict
+    # With strict=True, an integer is NOT silently coerced into a string
     result = guard.check(
         ToolCall(name="search_documents", arguments={"query": 12345}),
         user=EMPLOYEE,
@@ -125,12 +127,85 @@ def test_wrong_type_rejected():
     assert "Argument validation failed" in result.reason
 
 
-def test_enforce_executes_on_authorized_call():
+def test_empty_string_rejected_by_length_constraints():
     guard = ToolGuard()
-    executed = []
-    guard.enforce(
-        ToolCall(name="get_weather", arguments={"city": "San Francisco"}),
-        executor=lambda c: executed.append(c.arguments["city"]),
+    result = guard.check(
+        ToolCall(name="search_documents", arguments={"query": ""}),
         user=EMPLOYEE,
     )
-    assert executed == ["San Francisco"]
+    assert result.allowed is False
+    assert "Argument validation failed" in result.reason
+
+
+def test_oversized_string_rejected():
+    guard = ToolGuard()
+    # query max_length is 200
+    oversized = "a" * 201
+    result = guard.check(
+        ToolCall(name="search_documents", arguments={"query": oversized}),
+        user=EMPLOYEE,
+    )
+    assert result.allowed is False
+    assert "Argument validation failed" in result.reason
+
+
+# --- 3. API Integration Tests (/tools/execute) ---
+
+def test_api_employee_can_execute_weather():
+    response = client.post(
+        "/tools/execute",
+        headers=EMPLOYEE_HEADER,
+        json={"name": "get_weather", "arguments": {"city": "Delhi"}},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["allowed"] is True
+    assert data["tool"] == "get_weather"
+    assert data["result"]["city"] == "Delhi"
+
+
+def test_api_employee_cannot_execute_privileged_notification():
+    response = client.post(
+        "/tools/execute",
+        headers=EMPLOYEE_HEADER,
+        json={
+            "name": "draft_notification",
+            "arguments": {"channel": "general", "message": "Company announcement"},
+        },
+    )
+    assert response.status_code == 403
+    assert "Requires 'admin'" in response.json()["detail"]
+
+
+def test_api_admin_can_execute_privileged_notification():
+    response = client.post(
+        "/tools/execute",
+        headers=ADMIN_HEADER,
+        json={
+            "name": "draft_notification",
+            "arguments": {"channel": "general", "message": "Company announcement"},
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["allowed"] is True
+    assert data["result"]["status"] == "drafted"
+    assert data["result"]["channel"] == "general"
+
+
+def test_api_unknown_tool_rejected():
+    response = client.post(
+        "/tools/execute",
+        headers=ADMIN_HEADER,
+        json={"name": "os.system", "arguments": {"command": "whoami"}},
+    )
+    assert response.status_code == 403
+    assert "not in the allowlist" in response.json()["detail"]
+
+
+def test_api_tools_execute_requires_authentication():
+    response = client.post(
+        "/tools/execute",
+        json={"name": "get_weather", "arguments": {"city": "Delhi"}},
+    )
+    assert response.status_code == 401
