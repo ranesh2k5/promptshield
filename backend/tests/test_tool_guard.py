@@ -3,6 +3,7 @@ Tests for Day 3 Secure Tool Execution:
 - Tool allowlist enforcement
 - Strict argument type, length, and extra field validation
 - Mandatory user identity and role-based authorization
+- Authorization-aware document retrieval in search_documents (no metadata leakage)
 - End-to-end /tools/execute API behavior
 """
 
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models.schemas import User
 from app.security.tool_guard import ToolGuard, ToolCall
+from app.services.tool_dispatcher import ToolDispatcher
 
 client = TestClient(app)
 
@@ -149,7 +151,43 @@ def test_oversized_string_rejected():
     assert "Argument validation failed" in result.reason
 
 
-# --- 3. API Integration Tests (/tools/execute) ---
+# --- 3. Authorization-Aware Retrieval (No Information Disclosure) ---
+
+def test_employee_search_for_salary_excludes_restricted_document():
+    dispatcher = ToolDispatcher()
+    result = dispatcher.execute(
+        ToolCall(name="search_documents", arguments={"query": "salary"}),
+        user=EMPLOYEE,
+    )
+    # Restricted compensation document must be excluded from results
+    assert result["count"] == 0
+    assert len(result["results"]) == 0
+
+
+def test_admin_search_for_salary_includes_restricted_document():
+    dispatcher = ToolDispatcher()
+    result = dispatcher.execute(
+        ToolCall(name="search_documents", arguments={"query": "salary"}),
+        user=ADMIN,
+    )
+    # Admin has permission to view restricted metadata
+    assert result["count"] == 1
+    assert result["results"][0]["document_id"] == "doc-restricted-001"
+    assert "Salary" in result["results"][0]["title"]
+
+
+def test_employee_search_for_handbook_returns_public_document():
+    dispatcher = ToolDispatcher()
+    result = dispatcher.execute(
+        ToolCall(name="search_documents", arguments={"query": "handbook"}),
+        user=EMPLOYEE,
+    )
+    assert result["count"] == 1
+    assert result["results"][0]["document_id"] == "doc-public-001"
+    assert result["results"][0]["classification"] == "public"
+
+
+# --- 4. API Integration Tests (/tools/execute) ---
 
 def test_api_employee_can_execute_weather():
     response = client.post(

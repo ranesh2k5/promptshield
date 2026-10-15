@@ -32,7 +32,7 @@ class ToolDispatcher:
         """
         1. Validate tool allowlist, parameter schemas, and user permissions via ToolGuard.
         2. Log audit outcome.
-        3. Dispatch validated arguments to trusted executor function.
+        3. Dispatch validated arguments and verified identity to trusted executor function.
         """
         result = self.guard.check(call, user)
         if not result.allowed:
@@ -58,5 +58,5 @@ class ToolDispatcher:
             user.role,
             call.name,
         )
-        # Executor receives validated, strongly typed arguments
-        return executor(result.validated_args)
+        # Executor receives validated, strongly typed arguments and the verified User identity
+        return executor(result.validated_args, user)

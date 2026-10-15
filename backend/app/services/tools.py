@@ -1,42 +1,41 @@
 """
 Trusted tool implementations for PromptShield.
-Executors only receive validated, strongly typed arguments from ToolGuard.
+Executors only receive validated, strongly typed arguments from ToolGuard,
+along with the verified User identity where authorization is required.
 """
 
+from app.models.schemas import User
+from app.security.policy import can_read_document
 from app.security.tool_guard import (
     DraftNotificationArgs,
     GetWeatherArgs,
     SearchDocumentsArgs,
 )
+from app.services.documents import DOCUMENTS
 
 
-def search_documents(args: SearchDocumentsArgs) -> dict:
+def search_documents(args: SearchDocumentsArgs, user: User) -> dict:
     """
-    Simulated document search.
-    Returns document identifiers and titles matching the query.
-    Restricted document content is not exposed here; retrieval requires
-    the authorized document service.
+    Authorization-aware document search:
+    Filters results against user permissions before returning document metadata.
+    Restricted documents are completely excluded if the user is not authorized.
     """
     query = args.query.lower()
     results = []
-    if "handbook" in query:
-        results.append({
-            "document_id": "doc-public-001",
-            "title": "Employee Handbook",
-            "classification": "public",
-        })
-    if "facility" in query or "facilities" in query or "map" in query:
-        results.append({
-            "document_id": "doc-public-002",
-            "title": "Office Map & Facilities",
-            "classification": "public",
-        })
-    if "salary" in query or "compensation" in query or "executive" in query or "security" in query:
-        results.append({
-            "document_id": "doc-restricted-001",
-            "title": "Executive Compensation & Salary Bands",
-            "classification": "restricted",
-        })
+
+    for doc in DOCUMENTS.values():
+        # 1. Check if user is authorized to even see this document
+        if not can_read_document(user, doc.classification):
+            continue
+
+        # 2. Check query match in title or content
+        if query in doc.title.lower() or query in doc.content.lower():
+            results.append({
+                "document_id": doc.document_id,
+                "title": doc.title,
+                "classification": doc.classification,
+            })
+
     return {
         "query": args.query,
         "results": results,
@@ -44,7 +43,7 @@ def search_documents(args: SearchDocumentsArgs) -> dict:
     }
 
 
-def get_weather(args: GetWeatherArgs) -> dict:
+def get_weather(args: GetWeatherArgs, user: User | None = None) -> dict:
     """
     Simulated external weather tool.
     Returns mock meteorological information for demonstration.
@@ -57,7 +56,7 @@ def get_weather(args: GetWeatherArgs) -> dict:
     }
 
 
-def draft_notification(args: DraftNotificationArgs) -> dict:
+def draft_notification(args: DraftNotificationArgs, user: User | None = None) -> dict:
     """
     Privileged tool simulating an internal organization notification.
     Does not actually send external notifications; generates a drafted notification record.
