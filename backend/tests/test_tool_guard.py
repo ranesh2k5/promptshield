@@ -139,6 +139,21 @@ def test_empty_string_rejected_by_length_constraints():
     assert "Argument validation failed" in result.reason
 
 
+def test_invalid_channel_rejected_by_allowlist():
+    guard = ToolGuard()
+    # Channel must be one of: 'general', 'announcements', 'leadership'
+    result = guard.check(
+        ToolCall(
+            name="draft_notification",
+            arguments={"channel": "unauthorized_channel", "message": "Test"},
+        ),
+        user=ADMIN,
+    )
+    assert result.allowed is False
+    assert "Argument validation failed" in result.reason
+    assert "channel" in result.reason
+
+
 def test_oversized_string_rejected():
     guard = ToolGuard()
     # query max_length is 200

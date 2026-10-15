@@ -4,9 +4,11 @@ and enforces mandatory user role authority before passing validated arguments to
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.models.schemas import User
+
+PermittedChannel = Literal["general", "announcements", "leadership"]
 
 
 class ToolCall(BaseModel):
@@ -26,7 +28,9 @@ class GetWeatherArgs(BaseModel):
 
 class DraftNotificationArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    channel: str = Field(..., min_length=1, max_length=100, description="Permitted notification channel")
+    channel: PermittedChannel = Field(
+        ..., description="Explicit permitted notification channel: 'general', 'announcements', or 'leadership'"
+    )
     message: str = Field(..., min_length=1, max_length=500, description="Non-empty announcement text")
 
 
@@ -65,7 +69,7 @@ REGISTERED_TOOLS: dict[str, ToolDefinition] = {
 
 class ToolGuard:
     """
-    Validates tool names, strict Pydantic argument schemas (types, bounds),
+    Validates tool names, strict Pydantic argument schemas (types, bounds, enum/Literal values),
     and strictly requires a verified User identity for role authorization.
     """
 
