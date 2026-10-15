@@ -1,9 +1,16 @@
 """
-Base LLM client – wraps the OpenAI chat completions API.
+Base LLM client and structured LLMResponse models.
 """
 
+from typing import Any
+from pydantic import BaseModel
 from app.models.schemas import Message
 from app.config import settings
+
+
+class LLMResponse(BaseModel):
+    content: str | None = None
+    tool_call: dict[str, Any] | None = None
 
 
 class BaseLLM:
@@ -12,7 +19,7 @@ class BaseLLM:
     def __init__(self, model: str = "gpt-4o"):
         self.model = model
 
-    async def complete(self, messages: list[Message]) -> str:
+    async def generate(self, messages: list[Message]) -> LLMResponse:
         try:
             from openai import AsyncOpenAI
         except ImportError as exc:
@@ -23,4 +30,5 @@ class BaseLLM:
             model=self.model,
             messages=[{"role": m.role, "content": m.content} for m in messages],
         )
-        return response.choices[0].message.content or ""
+        content = response.choices[0].message.content
+        return LLMResponse(content=content)

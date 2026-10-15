@@ -4,46 +4,47 @@
 
 ---
 
-## Core Security Pipeline (Day 3)
+## Core Security Pipeline (Day 4: LLM → Tool → PromptShield)
 
 ```
-User
+User Prompt (via /chat)
   │
   ▼
-Chat / Tool API
+PromptShield Policy (pre-LLM injection filter)
   │
   ▼
-LLM proposes an action
+LLM proposes structured action:
+  { "name": "draft_notification", "arguments": { "channel": "leadership", ... } }
   │
   ▼
-PromptShield Tool Guard
-  ├── 1. Is the tool in the allowlist?
-  ├── 2. Are arguments strictly valid? (Pydantic, strict=True, forbidden extra fields)
-  ├── 3. Is the user authorized? (Mandatory resolved User identity, role checks)
-  └── 4. Are bounds and lengths safe?
+PromptShield ToolGuard
+  ├── 1. Identity Check: Mandatory resolved User from backend (X-Demo-User)
+  ├── 2. Allowlist Check: Is the tool allowlisted? (No arbitrary function names)
+  ├── 3. Role Authorization: Does user.role satisfy required_role?
+  └── 4. Strict Pydantic Validation: Types, lengths, and Literal channel values
   │
   ▼
 [ ALLOW / DENY ]
+  ├── DENIED ──► Executor is NEVER called. Returns blocked action record.
   │
-  ▼
-Trusted Tool Executor (receives validated_args only)
+  └── ALLOWED ─► ToolDispatcher invokes trusted Python executor with validated_args only.
 ```
 
 > **The Fundamental Rule:** The LLM proposes. PromptShield decides. The backend executes. The LLM is never given arbitrary Python execution, shell access, or system permissions.
 
 ---
 
-## Current Status (Day 3 Complete)
+## Current Status (Day 4 Complete)
 
 | Component | Status | Implementation Details |
 |-----------|:------:|------------------------|
+| **LLM Structured Proposals** | ✅ Implemented | `LLMResponse(content, tool_call)` interface implemented. Deterministic Mock LLM simulates realistic scenarios. |
+| **End-to-End Chat Tool Loop** | ✅ Implemented | Assistant invokes LLM → receives tool proposal → evaluates ToolGuard → dispatches to trusted executor → binds result to response. |
+| **Server-Side Security Gate** | ✅ Implemented | Tool proposal is evaluated against backend-resolved user identity. Employees attempting privileged notifications are **blocked before reaching executors**. |
 | **Document Authorization** | ✅ Implemented | Server-side deny-by-default policy (`can_read_document`). Employees can read public documents; restricted documents require admin. |
-| **Tool Guard Execution Boundary** | ✅ Implemented | Intercepts tool calls, enforces allowlist, validates strict Pydantic argument schemas (`strict=True`, `extra="forbid"`), and checks role authorization before dispatching to trusted executors. |
-| **Simulated Tool Executors** | ✅ Implemented | Three trusted tools: `search_documents`, `get_weather` (open to employee/admin), and `draft_notification` (admin-only). |
-| **Tool Dispatcher & API** | ✅ Implemented | `POST /tools/execute` resolves user identity via `X-Demo-User`, validates action through `ToolGuard`, logs audit events, and dispatches only to trusted backend functions. |
-| **Audit Logging** | ✅ Implemented | Logs all tool access decisions (`tool_allowed` / `tool_denied`) with `user_id`, `role`, and failure reason. |
-| **Automated Test Suite** | ✅ 28 Tests | 28 automated tests covering health, document authorization, tool allowlist, parameter validation, role permissions, and API endpoints. |
-| **Policy Evals** | ✅ 5/5 Green | Offline prompt injection evaluation harness. |
+| **Tool Guard Execution Boundary** | ✅ Implemented | Validates strict Pydantic schemas (`strict=True`, `extra="forbid"`), Literal channel allowlists, and enforces mandatory user role authority. |
+| **Automated Test Suite** | ✅ 40 Tests | 40 automated tests covering health, document authorization, tool guard, spy executor boundaries, and chat tool flows. |
+| **Policy & Tool Evals** | ✅ 6/6 Green | Offline harness scoring prompt injection attacks and end-to-end tool authorization bypass attempts. |
 
 ---
 
@@ -51,9 +52,9 @@ Trusted Tool Executor (receives validated_args only)
 
 | Tool Name | Permitted Roles | Required Arguments | Description |
 |-----------|:---------------:|-------------------|-------------|
-| `search_documents` | `employee`, `admin` | `query: str (1-200)` | Search document titles/IDs. Does not leak restricted content. |
+| `search_documents` | `employee`, `admin` | `query: str (1-200)` | Search document titles/IDs. Authorization-aware (restricted docs excluded for employees). |
 | `get_weather` | `employee`, `admin` | `city: str (1-100)` | Harmless simulated weather tool. |
-| `draft_notification` | `admin` | `channel: str`, `message: str (1-500)` | Privileged simulated notification draft. Denied to `employee`. |
+| `draft_notification` | `admin` | `channel: Literal['general', 'announcements', 'leadership']`, `message: str (1-500)` | Privileged simulated notification draft. Denied to `employee`. |
 
 ---
 
@@ -83,12 +84,12 @@ Open [http://localhost:5173](http://localhost:5173).
 ```bash
 cd backend
 python -m pytest -q
-# 28 passed
+# 40 passed
 ```
 
-### 4. Run Policy Evaluations
+### 4. Run Policy & Gateway Evaluations
 
 ```bash
 python evals/run_evaluation.py
-# 5/5 passed
+# 6/6 passed
 ```
